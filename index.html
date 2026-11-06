@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>สร้าง QR Code</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#667eea">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="QR Gen">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+
+<!-- ไลบรารี QR (เก็บในเครื่อง ใช้ออฟไลน์ได้) -->
+<script src="qrcode.min.js"></script>
+
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: "Sarabun", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    min-height: 100vh;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    color: #222;
+  }
+  .card {
+    max-width: 480px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  }
+  h1 { font-size: 1.4rem; text-align: center; margin: 0 0 16px; }
+  label { display: block; font-weight: 600; margin: 14px 0 6px; font-size: .95rem; }
+  textarea, select {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 12px;
+    font-size: 16px; /* กัน iOS ซูมอัตโนมัติ */
+    font-family: inherit;
+    background: #fff;
+  }
+  textarea { min-height: 110px; resize: vertical; }
+  textarea:focus, select:focus { outline: none; border-color: #667eea; }
+  .count { text-align: right; font-size: .8rem; color: #888; margin-top: 4px; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  input[type=color] {
+    width: 100%; height: 44px; border: 2px solid #ddd;
+    border-radius: 12px; padding: 2px; background: #fff;
+  }
+  .qr-box {
+    margin: 20px 0 10px;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    min-height: 120px;
+    background: #f5f5f8;
+    border-radius: 16px;
+    padding: 14px;
+  }
+  #preview {
+    display: none;
+    width: 100%;
+    max-width: 320px;
+    height: auto;
+    border-radius: 8px;
+    -webkit-touch-callout: default; /* ให้กดค้างแล้วบันทึกรูปได้ */
+    -webkit-user-select: auto;
+    user-select: auto;
+  }
+  .hint { display: none; font-size: .8rem; color: #777; margin-top: 8px; text-align: center; }
+  .placeholder { color: #999; text-align: center; }
+  .error { color: #d93025; text-align: center; font-size: .9rem; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  button {
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-family: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    background: #667eea;
+  }
+  button.secondary { background: #4caf8f; }
+  button.gray { background: #888; }
+  button.install { background: #f59e0b; display: none; }
+  button.full { grid-column: 1 / -1; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:active:not(:disabled) { transform: scale(.98); }
+  .status { text-align: center; font-size: .8rem; color: #888; margin-top: 14px; }
+  .status b.on { color: #2e9e6b; }
+  .status b.off { color: #e67e22; }
+  .toast {
+    position: fixed; left: 50%; bottom: 30px;
+    transform: translateX(-50%) translateY(100px);
+    background: #333; color: #fff; padding: 10px 20px;
+    border-radius: 20px; transition: .3s; opacity: 0;
+    font-size: .9rem; max-width: 90%; text-align: center;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>📱 สร้าง QR Code</h1>
+
+  <label for="text">ข้อความ / ลิงก์ (ไทย / English)</label>
+  <textarea id="text" placeholder="พิมพ์ข้อความ หรือ URL ที่นี่ เช่น https://example.com หรือ สวัสดีครับ"></textarea>
+  <div class="count"><span id="cnt">0</span> ตัวอักษร</div>
+
+  <div class="row">
+    <div>
+      <label for="ecl">ความทนทาน</label>
+      <select id="ecl">
+        <option value="L">ต่ำ (L)</option>
+        <option value="M" selected>กลาง (M)</option>
+        <option value="Q">สูง (Q)</option>
+        <option value="H">สูงมาก (H)</option>
+      </select>
+    </div>
+    <div>
+      <label for="size">ขนาดไฟล์</label>
+      <select id="size">
+        <option value="300">300 px</option>
+        <option value="500">500 px</option>
+        <option value="800" selected>800 px</option>
+        <option value="1200">1200 px</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="fg">สีโค้ด</label>
+      <input type="color" id="fg" value="#000000">
+    </div>
+    <div>
+      <label for="bg">สีพื้นหลัง</label>
+      <input type="color" id="bg" value="#ffffff">
+    </div>
+  </div>
+
+  <div class="qr-box">
+    <div class="placeholder" id="ph">QR Code จะแสดงที่นี่</div>
+    <canvas id="canvas" style="display:none"></canvas>
+    <img id="preview" alt="QR Code">
+    <div class="hint" id="hint">💡 กดค้างที่รูป QR แล้วเลือก "บันทึกรูปภาพ" ได้เช่นกัน</div>
+  </div>
+
+  <div class="btns">
+    <button class="full" id="gen">สร้าง QR Code</button>
+    <button class="secondary" id="dl" disabled>⬇️ บันทึกรูป</button>
+    <button class="secondary" id="share" disabled>📤 แชร์</button>
+    <button class="gray full" id="clear">ล้างข้อมูล</button>
+    <button class="install full" id="install">📲 ติดตั้งเป็นแอป</button>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const textEl = $('text'), canvas = $('canvas'), ph = $('ph'), preview = $('preview');
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+let timer;
+
+/* ---------- ฟังก์ชันช่วยเหลือ ---------- */
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function setEmpty(msg, cls) {
+  canvas.style.display = 'none';
+  preview.style.display = 'none';
+  $('hint').style.display = 'none';
+  ph.style.display = 'block';
+  ph.className = cls;
+  ph.textContent = msg;
+  $('dl').disabled = $('share').disabled = true;
+}
+
+/* ---------- สร้าง QR ---------- */
+function generate() {
+  const text = textEl.value;
+  $('cnt').textContent = [...text].length;
+
+  if (!text.trim()) {
+    setEmpty('QR Code จะแสดงที่นี่', 'placeholder');
+    return;
+  }
+
+  QRCode.toCanvas(canvas, text, {
+    width: parseInt($('size').value, 10),
+    margin: 2,
+    errorCorrectionLevel: $('ecl').value,
+    color: { dark: $('fg').value, light: $('bg').value }
+  }, err => {
+    if (err) {
+      setEmpty('ข้อความยาวเกินไป ลองลดความยาว หรือลดระดับความทนทาน', 'error');
+      return;
+    }
+    // แสดงเป็นรูป <img> เพื่อให้กดค้างบันทึกได้
+    preview.src = canvas.toDataURL('image/png');
+    preview.style.display = 'block';
+    ph.style.display = 'none';
+    $('hint').style.display = 'block';
+    $('dl').disabled = $('share').disabled = false;
+  });
+}
+
+textEl.addEventListener('input', () => {
+  clearTimeout(timer);
+  timer = setTimeout(generate, 300);
+});
+['ecl', 'size', 'fg', 'bg'].forEach(id => $(id).addEventListener('change', generate));
+$('gen').onclick = generate;
+
+$('clear').onclick = () => {
+  textEl.value = '';
+  generate();
+  textEl.focus();
+};
+
+/* ---------- บันทึกรูป ---------- */
+const getBlob = () => new Promise(r => canvas.toBlob(r, 'image/png'));
+
+$('dl').onclick = async () => {
+  const blob = await getBlob();
+  if (!blob) return;
+  const file = new File([blob], 'qrcode.png', { type: 'image/png' });
+
+  // iPhone: เปิดเมนูแชร์ แล้วเลือก "บันทึกรูปภาพ"
+  if (isIOS) {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); } catch (e) {}
+    } else {
+      toast('กดค้างที่รูป QR แล้วเลือก "เพิ่มไปยังรูปภาพ"');
+    }
+    return;
+  }
+
+  // Android / คอมพิวเตอร์: ดาวน์โหลดโดยตรง
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'qrcode-' + Date.now() + '.png';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast('บันทึกรูปแล้ว (ดูในโฟลเดอร์ดาวน์โหลด)');
+};
+
+/* ---------- แชร์ ---------- */
+$('share').onclick = async () => {
+  const blob = await getBlob();
+  if (!blob) return;
+  const file = new File([blob], 'qrcode.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'QR Code' });
+    } else {
+      toast('อุปกรณ์นี้ไม่รองรับการแชร์ ให้กดค้างที่รูปแทน');
+    }
+  } catch (e) { /* ผู้ใช้ยกเลิก */ }
+};
+
+/* ---------- ปุ่มติดตั้งแอป (Android / Chrome) ---------- */
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  $('install').style.display = 'block';
+});
+$('install').onclick = async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  $('install').style.display = 'none';
+};
+window.addEventListener('appinstalled', () => {
+  $('install').style.display = 'none';
+  toast('ติดตั้งแอปเรียบร้อยแล้ว 🎉');
+});
+
+/* ---------- แสดงสถานะออนไลน์/ออฟไลน์ ---------- */
+function updateStatus() {
+  $('status').innerHTML = navigator.onLine
+    ? 'สถานะ: <b class="on">● ออนไลน์</b>'
+    : 'สถานะ: <b class="off">● ออฟไลน์</b> (ใช้งานได้ตามปกติ)';
+}
+window.addEventListener('online', updateStatus);
+window.addEventListener('offline', updateStatus);
+updateStatus();
+
+/* ---------- ลงทะเบียน Service Worker ---------- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err => console.log('SW error:', err));
+  });
+}
+</script>
+</body>
+</html>
